@@ -3,8 +3,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
-using System.Threading.Tasks;
 using System.Xml.Linq;
+using XmlTools;
 
 namespace MdsMessageSchema
 {
@@ -22,6 +22,9 @@ namespace MdsMessageSchema
         public static MessageSchema Analyze(IEnumerable<SchemaItem> items) =>
             new MessageSchema(items);
 
+        public SchemaItem ItemWithXPath(string xpath) => 
+            items.Where(i => i.XPath == xpath).FirstOrDefault();
+        
 
         private MessageSchema(IEnumerable<SchemaItem> items)
         {
@@ -32,19 +35,19 @@ namespace MdsMessageSchema
                 .FirstOrDefault();
 
             xmlDocument = new XDocument(
-                new XDeclaration("1.0", "utf-8", "no"),
+                new XDeclaration("1.0", "utf-8", string.Empty),
                 new XElement(rootName));
 
-            Dictionary<int, XElement> xElements = new Dictionary<int, XElement> { { rootId, xmlDocument.Root } };
-            Dictionary<int, XAttribute> xAttributes = new Dictionary<int, XAttribute>();
+            Dictionary<int, XElement> xElements = new() { { rootId, xmlDocument.Root } };
+            Dictionary<int, XAttribute> xAttributes = new();
 
             foreach (var item in items.Where(i => i.ParentElementID != 0))
             {
-                object? content = null;
+                object content = default(object);
                 switch(item.DataFormat)
                 {
                     case DataFormat.Text:
-                        content = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".Substring(0, item.Length <= 50 ? item.Length : 50);
+                        content = item.ElementName;// "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";//.Substring(0, item.Length <= 50 ? item.Length : 50);
                         break;
                     case DataFormat.Integer:
                         content = 255;
@@ -108,16 +111,15 @@ namespace MdsMessageSchema
                 item.XPath = XPath(item.IntMessageLineID);
             }
 
-            //xsdDocument = XsdInferer.Infer(All());
+            xsdDocument = Xsd.Infer(All());
             excludeWrap();
-
 
             Dictionary<string, XElement> elementXPath = new Dictionary<string, XElement>();
             xsdDocument
                 .Descendants()
                 .Where(x => x.HasAttributes && x.Attribute("name") != null)
                 .ToList()
-                .ForEach(element => elementXPath[XPath(element)] = element);
+                .ForEach(element => elementXPath[element.XsdXPath()] = element);
 
             items.ToList().ForEach(
                 i => {
@@ -129,81 +131,6 @@ namespace MdsMessageSchema
 
         }
 
-        //public MdsSchema Build
-        /*
-        public MdsSchema(ISchemaRepo repo)
-        {
-            items = repo.SchemaItems.ToArray();
-            (int rootId, string rootName) = items
-                .Where(i => i.ParentElementID == 0)
-                .Select(i => (i.IntMessageLineID, i.ElementName))
-                .FirstOrDefault();
-
-            xmlDocument = new XDocument(
-                new XDeclaration("1.0", "utf-8", "no"),
-                new XElement(rootName));
-
-            Dictionary<int, XElement> xElements = new Dictionary<int, XElement> { { rootId, xmlDocument.Root } };
-            Dictionary<int, XAttribute> xAttributes = new Dictionary<int, XAttribute>();
-
-            foreach (var item in items.Where(i => i.ParentElementID != 0))
-            {
-                switch (item.LineType)
-                {
-                    case 0:
-                    case 1:
-                        xElements[item.IntMessageLineID] =
-                            new XElement(item.ElementName, string.IsNullOrWhiteSpace(item.Value) && item.LineType == 1 ? item.ElementName : item.Value);
-                        break;
-                    case 2:
-                        xAttributes[item.IntMessageLineID] =
-                            new XAttribute(item.ElementName, item.Value);
-                        break;
-                    default:
-                        throw new InvalidOperationException("unknown item type");
-                }
-            }
-
-            foreach (var item in items.Where(i => i.ParentElementID != 0))
-            {
-                switch (item.LineType)
-                {
-                    case 0:
-                    case 1:
-                        xElements[item.ParentElementID]
-                            .Add(xElements[item.IntMessageLineID]);
-                        break;
-                    case 2:
-                        xElements[item.ParentElementID]
-                            .Add(xAttributes[item.IntMessageLineID]);
-                        break;
-                    default:
-                        throw new InvalidOperationException("unknown item type");
-                }
-                item.Indentation = Indentation(item.IntMessageLineID);
-                item.XPath = XPath(item.IntMessageLineID);
-            }
-
-            //xsdDocument = IncludeSchema(ExcludeWrap(XsdInferer.Infer(All())).ToString());
-
-            var h = XsdInferer.Infer(All());
-                
-
-
-            Dictionary<string, XElement> elementXPath = new Dictionary<string, XElement>();
-            xsdDocument
-                .Descendants()
-                .Where(x => x.HasAttributes && x.Attribute("name") != null)
-                .ToList()
-                .ForEach(element => elementXPath[XPath(element)] = element);
-
-            items.ToList().ForEach(
-                i => {
-                    var element = elementXPath[XPath(i.IntMessageLineID)];
-                    if (element.Attribute("type") != null)
-                        element.Attribute("type").Value = $"{i.IntMessageLineID}";});
-        }
-        */
         override public string ToString() => xmlDocument.ToString();
 
         public IEnumerable<string> Paths(int id)
@@ -306,7 +233,7 @@ namespace MdsMessageSchema
             //var xsdMarkup = XDocument.Load(new StringReader(xsdWrapped));
 
             XElement extracted = xsdDocument
-                .Descendants()
+                .Descendants()?
                 .Where(i => i.Attribute("name")?.Value.Equals(xmlDocument.Root.Name.LocalName) ?? false)
                 .FirstOrDefault();
 
@@ -334,23 +261,6 @@ namespace MdsMessageSchema
                 if (!string.IsNullOrEmpty(message))
                     yield return message;
             }
-        }
-
-        public string XPath(XElement element)
-        {
-            if (element.Parent == null)
-                return null;
-            var parentXPath = XPath(element.Parent);
-            var path = element.Attribute("name")?.Value;
-            var prefix = path == null || parentXPath == null ? null : "/";
-            return $"{parentXPath}{prefix}{path}";
-        }
-
-        public string XXPath(XElement element)
-        {
-            if (element.Parent == null)
-                return element.Name.LocalName;
-            return $"{XXPath(element.Parent)}/{element.Name.LocalName}";
         }
     }
 }

@@ -57,6 +57,19 @@ namespace MdsMessageSchema
         
         public DataFormat DataFormat { get; set; }
         public int Length { get; set; }
-        public string TypeInXsdLibrary { get; set; }
+        public string TypeInXsdLibrary { get; set; }        
+        private string clrType =>
+            DataFormat.Equals(DataFormat.Text) ? "string" :
+            DataFormat.Equals(DataFormat.Integer) ? "int" :
+            DataFormat.Equals(DataFormat.Decimal) ? "decimal" :
+            DataFormat.Equals(DataFormat.Boolean) ? "bool" :
+            DataFormat.Equals(DataFormat.Date) ? "DateTime" :
+            DataFormat.Equals(DataFormat.DateTime) ? "DateTime" :
+            DataFormat.Equals(DataFormat.Time) ? "DateTime" :
+            DataFormat.Equals(DataFormat.GUID) ? "Guid" : string.Empty;
+        public string Type =>
+            new Multiplicity[] { Multiplicity.None_Many, Multiplicity.None_One }.Contains(Multiplicity) && clrType != "string" ? $"{clrType}?" : clrType;
+        public bool IsArray => 
+            new Multiplicity[] { Multiplicity.None_Many, Multiplicity.One_Many }.Contains(Multiplicity);
     }
 }
